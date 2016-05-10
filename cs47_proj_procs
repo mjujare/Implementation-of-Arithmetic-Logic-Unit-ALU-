@@ -1,0 +1,655 @@
+.include "./cs47_proj_macro.asm"
+.text
+#-----------------------------------------------
+# C style signature 'printf(<format string>,<arg1>,
+#			 <arg2>, ... , <argn>)'
+#
+# This routine supports %s and %d only
+#
+# Argument: $a0, address to the format string
+#	    All other addresses / values goes into stack
+#-----------------------------------------------
+printf:
+	#store RTE - 5 * 4 = 20 bytes
+	addi	$sp, $sp, -24
+	sw	$fp, 24($sp)
+	sw	$ra, 20($sp)
+	sw	$a0, 16($sp)
+	sw	$s0, 12($sp)
+	sw	$s1,  8($sp)
+	addi	$fp, $sp, 24
+	# body
+	move 	$s0, $a0 #save the argument
+	add     $s1, $zero, $zero # store argument index
+printf_loop:
+	lbu	$a0, 0($s0)
+	beqz	$a0, printf_ret
+	beq     $a0, '%', printf_format
+	# print the character
+	li	$v0, 11
+	syscall
+	j 	printf_last
+printf_format:
+	addi	$s1, $s1, 1 # increase argument index
+	mul	$t0, $s1, 4
+	add	$t0, $t0, $fp # all print type assumes 
+			      # the latest argument pointer at $t0
+	addi	$s0, $s0, 1
+	lbu	$a0, 0($s0)
+	beq 	$a0, 'd', printf_int
+	beq	$a0, 's', printf_str
+	beq	$a0, 'c', printf_char
+printf_int: 
+	lw	$a0, 0($t0) # printf_int
+	li	$v0, 1
+	syscall
+	j 	printf_last
+printf_str:
+	lw	$a0, 0($t0) # printf_str
+	li	$v0, 4
+	syscall
+	j 	printf_last
+printf_char:
+	lbu	$a0, 0($t0)
+	li	$v0, 11
+	syscall
+	j 	printf_last
+printf_last:
+	addi	$s0, $s0, 1 # move to next character
+	j	printf_loop
+printf_ret:
+	#restore RTE
+	lw	$fp, 24($sp)
+	lw	$ra, 20($sp)
+	lw	$a0, 16($sp)
+	lw	$s0, 12($sp)
+	lw	$s1,  8($sp)
+	addi	$sp, $sp, 24
+	jr 	$ra
+
+# TBD: Complete your project procedures
+# Needed skeleton is given
+#####################################################################
+# Implement au_logical
+# Argument:
+# 	$a0: First number
+#	$a1: Second number
+#	$a2: operation code ('+':add, '-':sub, '*':mul, '/':div)
+# Return:
+#	$v0: ($a0+$a1) | ($a0-$a1) | ($a0*$a1):LO | ($a0 / $a1)
+# 	$v1: ($a0 * $a1):HI | ($a0 % $a1)
+# Notes:
+#####################################################################
+au_logical:
+# TBD: Complete it
+	#store RTE
+	addi	$sp, $sp, -24
+	sw	$fp, 24($sp)
+	sw	$ra, 20($sp)
+	sw	$a0, 16($sp)
+	sw	$a1, 12($sp)
+	sw	$a2,  8($sp)
+	addi	$fp, $sp, 24
+		
+logic_conditions:
+	beq 	$a2, '+', logic_add
+	beq 	$a2, '-', logic_sub 
+	beq 	$a2, '*', logic_mul 
+	beq 	$a2, '/', logic_div 
+	
+	j	logic_end 
+	
+logic_add:
+	jal	add_logical
+	j	logic_end
+
+logic_sub:
+	jal	sub_logical
+	j	logic_end
+
+logic_mul:
+	jal	mul_signed
+	j	logic_end
+
+logic_div:
+	jal	div_signed
+	j	logic_end
+
+logic_end:
+	lw	$fp, 24($sp)
+	lw	$ra, 20($sp)
+	lw	$a0, 16($sp)
+	lw	$a1, 12($sp)
+	lw	$a2,  8($sp)
+	addi	$sp, $sp, 24
+	jr	$ra	
+		
+###########################################################################################################################
+###########################################################################################################################
+
+add_logical:
+	# Store frame
+	addi	$sp, $sp, -28
+	sw	$fp, 28($sp)
+	sw	$ra, 24($sp)
+	sw	$a0, 20($sp)
+	sw	$a1, 16($sp)
+	sw	$a2, 12($sp)
+	sw	$s0,  8($sp)
+	addi	$fp, $sp, 28
+	
+	li	$a2, 0x00000000				
+
+	li	$t0, 0					# $t0 = I (Index), set I t0 zero
+	li	$v0, 0 					# $v0 = S (Solution), set S to zero
+	and	$s0, $a2, 0x1 				# $s0 = C: C = $a2[0]
+	
+	beqz	$a2, add_loop				# in the case $a2 != zero, go to add_loop
+	not	$a1, $a1				# Invert $a1 (~$a1)
+	
+add_loop:	
+	extract_nth_bit($t2, $a0, $t0) 			# $t2 = A
+	extract_nth_bit($t3, $a1, $t0) 			# $t3 = B	
+	
+	xor 	$t4, $t2, $t3 				# $t4 contains result of A + B
+	xor 	$t6, $s0, $t4 				# $t6 = Y: Y = CI + (A + B)
+	
+	and 	$t7, $s0, $t4 				# $t7 contains result of CI.(A + B)
+	and 	$t8, $t2, $t3 				# $t8 contains result of A.B
+	or 	$s0, $t7, $t8 				# $s0 = CO: CO = CI.(A + B) + A.B
+	
+	insert_to_nth_bit($v0, $t0, $t6, $t9) 		# $v0 = S (return value), $t0 = I, $t6 = Y, $t9 = $maskReg
+	
+	addi	$t0, $t0, 0x1 				# I = I + 1
+	bne	$t0, 0x20, add_loop			# in the case $t0 (I) != 32, go to add_loop
+	beq	$t0, 0x20, end_add_logical 		# in the case $t0 (I) == 32, go to end_add_logical
+	
+end_add_logical:
+	move $v1, $s0					# Final carryout: $s0 (CO) is returned in $v1
+	
+	# Restore frame		
+	lw	$fp, 28($sp)
+	lw	$ra, 24($sp)
+	lw	$a0, 20($sp)
+	lw	$a1, 16($sp)
+	lw	$a2, 12($sp)
+	lw	$s0,  8($sp)
+	addi	$sp, $sp, 28
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+
+sub_logical:	
+	# Store frame
+	addi	$sp, $sp, -36
+	sw	$fp, 36($sp)
+	sw	$ra, 32($sp)
+	sw	$a0, 28($sp)
+	sw	$a1, 24($sp)
+	sw	$a2, 20($sp)
+	sw	$s0, 16($sp)
+	sw	$s1, 12($sp)
+	sw	$s3,  8($sp)
+	addi	$fp, $sp, 36
+
+	li	$a2, 0xFFFFFFFF
+	
+	li	$s3, 0					# $s3 = I (Index), set I t0 zero
+	li	$v0, 0 					# $v0 = S (Solution), set S to zero
+	
+	move	$s0, $a0 				# $s0 = $a0 (Set contents of $a0 to $a0)
+	move	$s1, $a1				# $s1 = $a1 (Set contents of $a1 to $s1)
+	
+	not	$a1, $a1				# Invert $a1 (~$a1)
+	move	$a0, $a1				# $a0 = $a1 (Set contents of $a1 to $a0)
+	li	$a1, 1					# Set $a1 to 1
+	
+	jal	add_logical
+	
+	move	$a0, $s0				# $a0 = $s0 (Set contents of $s0 to $a0)
+	move	$a1, $v0 				# $a1 = $v0 (Set contents of $v0 to $a1)
+	
+	jal	add_logical
+	
+end_sub_logical:
+	# Restore frame
+	lw	$fp, 36($sp)
+	lw	$ra, 32($sp)
+	lw	$a0, 28($sp)
+	lw	$a1, 24($sp)
+	lw	$a2, 20($sp)
+	lw	$s0, 16($sp)
+	lw	$s1, 12($sp)
+	lw	$s3,  8($sp)
+	addi	$sp, $sp, 36
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+
+twos_complement:
+	# Store frame
+	addi	$sp, $sp, -20
+	sw	$fp, 20($sp)
+	sw	$ra, 16($sp)
+	sw	$a0, 12($sp)
+	sw	$a1,  8($sp)
+	addi	$fp, $sp, 20
+	
+   	not	$a0, $a0			# Invert $a0 (~$a0)
+   	li	$a1, 1				# Set $a1 to 1
+   	
+	jal	add_logical			# add_logical implements ~$a0 + 1, storing the result in $v0
+	
+	# Restore frame
+	lw	$fp, 20($sp)
+	lw	$ra, 16($sp)
+	lw	$a0, 12($sp)
+	lw	$a1,  8($sp)
+	addi	$sp, $sp, 20
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+	
+twos_complement_if_neg:
+	# Store frame
+	addi	$sp, $sp, -16
+	sw	$fp, 16($sp)
+	sw	$ra, 12($sp)
+	sw	$a0,  8($sp)
+	addi	$fp, $sp, 16
+	
+	blt	$a0, 0, goto_twos_complement	# in the case $a0 is less than zero, go to goto_twos_complement
+	j	twos_if_end	
+	
+goto_twos_complement:
+	jal	twos_complement
+	move	$a0, $v0			# $a0 = $v0 (Set contents of $v0 to $a0)
+	
+twos_if_end:
+	move	$v0, $a0			# $v0 = $a0 (Set contents of $a0 to $v0)
+
+	# Restore frame
+	lw	$fp, 16($sp)
+	lw	$ra, 12($sp)
+	lw	$a0,  8($sp)
+	addi	$sp, $sp, 16
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+	
+twos_complement_64bit:
+	# Store frame
+	addi	$sp, $sp, -32
+	sw	$fp, 32($sp)
+	sw	$ra, 28($sp)
+	sw	$a0, 24($sp)
+	sw	$a1, 20($sp)
+	sw	$s1, 16($sp)
+	sw	$s2, 12($sp)
+	sw	$s3,  8($sp)
+	addi	$fp, $sp, 32
+	
+	not	$a0, $a0			# Invert $a0 (~$a0)
+	not	$a1, $a1			# Invert $a1 (~$a1)
+	move  	$s1, $a1			# $s1 = $a1 (Set contents of now inverted $a1 to $s1)
+	
+	li	$a1, 1				# Set $a1 to 1
+	
+	jal	add_logical
+	
+	move	$s2, $v0			# $s2 = $v0 (Set contents of $v0 to $s2)
+	
+	beq	$v1, 1, plus_one		# in the case $v1 equals 1, go to plus_one
+	move	$s3, $s1			# $s3 = $s1 (Set contents of $s1 to $s3)
+	j	end_64
+	
+plus_one:
+	move	$a0, $s1			# $a0 = $s1 (Set contents of $s1 to $a0)
+	jal	add_logical
+	move	$s3, $v0			# $s3 = $v0 (Set contents of $v0 to $s3)
+	
+
+end_64:
+	move	$v0, $s2			# Return $s2 (LO) in $v0	
+	move	$v1, $s3			# Return $s3 (HI) in $v1
+	
+	# Restore frame
+	lw	$fp, 32($sp)
+	lw	$ra, 28($sp)
+	lw	$a0, 24($sp)
+	lw	$a1, 20($sp)
+	lw	$s1, 16($sp)
+	lw	$s2, 12($sp)
+	lw	$s3,  8($sp)
+	addi	$sp, $sp, 32
+	jr	$ra	
+	
+###########################################################################################################################
+###########################################################################################################################
+	
+bit_replicator:
+	# Store frame
+	addi	$sp, $sp, -16
+	sw	$fp, 16($sp)
+	sw	$ra, 12($sp)
+	sw	$a0,  8($sp)
+	addi	$fp, $sp, 16
+	
+	beq	$a0, 0x0, plus			# in the case $a0 is 0, go to plus
+	beq	$a0, 0x1, minus			# in the case $a0 is 1, go to minus
+	
+plus:
+	li	$v0, 0x00000000			# Set $v0 to positive
+	j	replicator_end
+	
+minus:
+	li	$v0, 0xFFFFFFFF			# Set $v0 to negative
+	j	replicator_end
+	
+replicator_end:
+	# Restore frame
+	lw	$fp, 16($sp)
+	lw	$ra, 12($sp)
+	lw	$a0,  8($sp)
+	addi	$sp, $sp, 16
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+
+mul_unsigned:
+	# Store frame
+	addi	$sp, $sp, -52
+	sw	$fp, 52($sp)
+	sw	$ra, 48($sp)
+	sw	$a0, 44($sp)
+	sw	$a1, 40($sp)
+	sw	$a2, 36($sp)
+	sw	$s0, 32($sp)
+	sw	$s1, 28($sp)
+	sw	$s2, 24($sp)
+	sw	$s3, 20($sp)
+	sw	$s4, 16($sp)
+	sw	$s6, 12($sp)
+	sw	$s7,  8($sp)
+	addi	$fp, $sp, 52
+	
+	li	$s7, 0 				# $s7 is I, I = Index (Set I to zero)
+	li	$s4, 0 				# $s4 is H, H = Hi (Set Hi to zero)
+	move 	$s1, $a1 			# $s1 is L (Set the contents of $a1 to $s1)
+	move 	$s0, $a0 			# $s0 is M (Set the contents of $a0 to $s0)
+	
+mul_step_loop:
+	extract_nth_bit($s2, $s1, $zero) 	# L[0]
+	move	$a0, $s2			# $a0 = $s2 (Set the contents of $s2 to $a0)
+	jal	bit_replicator	
+	move	$s2, $v0 			# R = $s2 (Set the contents of $v0 to $s2)
+	and	$s3, $s0, $s2 			# X = $s3 
+	move	$a0, $s4			# Pass H to $a0 (Set the contents of $s4 aka H to $a0)
+	move	$a1, $s3			# Pass X to $a1 (Set the contents of $s3 aka X to $a1)
+	jal	add_logical
+	move	$s4, $v0 			# H = $s4 (Set the contents of $v0 to $s4)
+	
+	srl	$s1, $s1, 1			# I = I >> 1 (Shift I to the right)
+	
+	extract_nth_bit($t0, $s4, $zero) 	# t0 = H[0] 
+	li	$s6, 0x1f 			# Set 31 to $s6
+	insert_to_nth_bit($s1, $s6, $t0, $t9) 	# L[31] = H[0]
+	srl	$s4, $s4, 1			# H = H >> 1 (Shift H to the right)
+	addi	$s7, $s7, 1
+	
+	bne	$s7, 0x20, mul_step_loop	# in the case $s7 (I) is 32, go to mul_step_loop
+	
+end_unsigned_mul:
+	move	$v0, $s1			# Return L (LO) in $v0 
+	move	$v1, $s4			# Return H (HI) in $vi
+
+	# Restore frame
+	lw	$fp, 52($sp)
+	lw	$ra, 48($sp)
+	lw	$a0, 44($sp)
+	lw	$a1, 40($sp)
+	lw	$a2, 36($sp)
+	lw	$s0, 32($sp)
+	lw	$s1, 28($sp)
+	lw	$s2, 24($sp)
+	lw	$s3, 20($sp)
+	lw	$s4, 16($sp)
+	lw	$s6, 12($sp)
+	lw	$s7,  8($sp)
+	addi	$sp, $sp, 52
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+
+mul_signed:
+	# Store frame
+	addi	$sp, $sp, -44
+	sw	$fp, 44($sp)
+	sw	$ra, 40($sp)
+	sw	$a0, 36($sp)
+	sw	$a1, 32($sp)
+	sw	$s0, 28($sp)
+	sw	$s1, 24($sp)
+	sw	$s2, 20($sp)
+	sw	$s3, 16($sp)
+	sw	$s4, 12($sp)
+	sw	$s5,  8($sp)
+	addi	$fp, $sp, 44
+	
+	move	$s1, $a0			# N1 is $a0 (going by Mr. Patra's slides)
+	move	$s2, $a1			# N2 is $a1 (going by Mr. Patra's slides)
+	
+	# Check sign S of result
+	li	$t0, 0x1f			# Set $t0 to 31
+	extract_nth_bit($s3, $a0, $t0)
+	extract_nth_bit($s4, $a1, $t0)
+	xor	$s5, $s3, $s4			# S = $s5
+	
+	# Make $s1 twos_complement_if_neg
+	move	$a0, $s1			# $a0 = $s1 (Set contents of $s1 to $a0)	
+	jal	twos_complement_if_neg
+	move    $s1, $v0			# $s1 = $v0 (Set contents of $v0 to $s1)
+	
+	# Make $s2 twos_complement_if_neg
+	move	$a0, $s2			# $a0 = $s2 (Set contents of $s2 to $a0)
+	jal	twos_complement_if_neg
+	move	$s2, $v0			# $s2 = $v0 (Set contents of $v0 to $s2)
+	
+	move	$a0, $s1			# $a0 = $s1 (Set contents of $s1 to $a0)
+	move	$a1, $s2			# $a1 = $s2 (Set contents of #s2 to $a1)
+	
+	jal	mul_unsigned
+	
+	beqz	$s5, mul_terminate		# in the case that $s5 equals zero, go to mul_terminate
+	
+	move	$a0, $v0			# $a0 = $v0 (Set contents of $v0 to $a0)
+	move	$a1, $v1			# $a1 = $v1 (Set contents of $v1 to $a1)
+	jal	twos_complement_64bit	
+
+mul_terminate:		
+	# Restore frame
+	lw	$fp, 44($sp)
+	lw	$ra, 40($sp)
+	lw	$a0, 36($sp)
+	lw	$a1, 32($sp)
+	lw	$s0, 28($sp)
+	lw	$s1, 24($sp)
+	lw	$s2, 20($sp)
+	lw	$s3, 16($sp)
+	lw	$s4, 12($sp)
+	lw	$s5,  8($sp)
+	addi	$sp, $sp, 44
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+
+div_unsigned:	
+	# Store frame
+	addi	$sp, $sp, -36
+	sw	$fp, 36($sp)
+	sw	$ra, 32($sp)
+	sw	$a0, 28($sp)
+	sw	$a1, 24($sp)
+	sw	$s0, 20($sp)
+	sw	$s1, 16($sp)
+	sw	$s2, 12($sp)
+	sw	$s3,  8($sp)
+	addi	$fp, $sp, 36
+	
+	li	$s0, 0 				# $s0 = I (Index)
+	move	$s1, $a0 			# $s1 = Q (Quotient)
+	move	$s2, $a1 			# $s2 = D (Divisor)
+	li	$s3, 0 				# $s3 = R (Remainder)
+	
+div_step_loop:
+
+	sll	$s3, $s3, 1                     # $s3 = R: R = R << 1 (Shift R to the left)
+	li	$t0, 0x1f			# Set $t0 to 31 
+	extract_nth_bit($t3, $s1, $t0)	
+	insert_to_nth_bit($s3, $zero, $t3, $t9)
+	sll	$s1, $s1, 1                     # $s1 = Q: Q = Q << 1 (Shift Q to the left)
+	move	$a0, $s3			# $a0 = $s3 (Sets contents of $s3 (R) to $a0)
+	move	$a1, $s2			# $a1 = $s2 (Sets contents of $s2 (D) to $a1)
+	jal	sub_logical
+	move	$t6, $v0                        # $t6 = S (Sets contents of $v0 to $t6)
+	
+	bltz	$t6, yes			# in the case that $t6 (S) equals zero, go to yes
+	move	$s3, $t6                        # R = S (Sets contents of S to R; $s3 = R and $t6 = S)
+	li	$t5, 1
+	insert_to_nth_bit($s1, $zero, $t5, $t9) # insert 1 into first position of Q: Q[0] = 1
+	
+yes:
+	add	$s0, $s0, 1                     # I = I + 1
+	beq	$s0, 0x20, div_unsigned_end     # I == 32
+	j       div_step_loop
+
+div_unsigned_end:
+	move 	$v0, $s1			# Return Q (Quotient) in $v0
+	move	$v1, $s3			# Return R (Remainder) in $v1
+	
+	# Restore frame
+	lw	$fp, 36($sp)
+	lw	$ra, 32($sp)
+	lw	$a0, 28($sp)
+	lw	$a1, 24($sp)
+	lw	$s0, 20($sp)
+	lw	$s1, 16($sp)
+	lw	$s2, 12($sp)
+	lw	$s3, 8($sp)
+	addi	$sp, $sp, 36
+	jr	$ra
+
+###########################################################################################################################
+###########################################################################################################################
+	
+div_signed:
+	# Store frame
+	addi	$sp, $sp, -36
+	sw	$fp, 36($sp)
+	sw	$ra, 32($sp)
+	sw	$a0, 28($sp)
+	sw	$a1, 24($sp)
+	sw	$s1, 20($sp)
+	sw	$s2, 16($sp)
+	sw	$s4, 12($sp)
+	sw	$s5,  8($sp)
+	addi	$fp, $sp, 36
+	
+	move	$s1, $a0	        # N1 is $a0 (going by Mr. Patra's slides)
+	move	$s2, $a1	        # N2 is $a1 (going by Mr. Patra's slides)
+	
+	li	$t7, 0x1f		# Set $t7 to 31
+	extract_nth_bit($s4, $s1, $t7)	# Extract $a0(s1) by 32-bit and store it in $s4
+	extract_nth_bit($s5, $s2, $t7)	# Extract $a2(s2) by 32-bit and store it in $s5
+	xor	$s5, $s4, $s5 		# xor $a0(s4) and $a1(s5), store it in $s5(S)
+	
+	# Make $s1 twos_complement_if_neg
+	move	$a0, $s1		# Move $s1 to $a0
+	jal	twos_complement_if_neg	
+	move    $s1, $v0		# $s1 = $v0
+	
+	# Make $s2 twos_complement_if_neg
+	move	$a0, $s2		# $a0 = $s2 (Set contents of $s2 to $a0)
+	jal	twos_complement_if_neg	
+	move	$s2, $v0		# $s2 = $v0 (Set contents of $v0 to $s2)
+	
+	move	$a0, $s1		# $a0 = $s1 (Set the contents of $s1 to $a0)
+	move	$a1, $s2		# $a1 = $s2 (Set the contents of $s2 to $a1)
+	jal	div_unsigned
+	
+	move 	$s1, $v0		# $s1 = $v0 (Sets the contents of $v0 to $s1)	
+	move 	$s2, $v1		# $s2 = $v1 (Sets the contents of $v1 to $s2)
+	
+	# $s5 is S of Q
+	beqz	$s5, goto_zero		# in the case $S5 = 0, skip $s5
+	move	$a0, $s1		# $a0 = $s1 (Set the contents of $s1 to $a0)
+	jal	twos_complement
+	move	$s1, $v0 		# $s1(Q) = $v0 (The contents of $v0 are set to $s1(Q))
+	
+goto_zero:	# $s4 is S of R
+	beqz 	$s4, otherwise		# if $s4 equals zero, go to otherwise 
+	move 	$a0, $s2		# $a0 = $s2 (Set contents of $s2 to $a0)
+	jal	twos_complement		
+	move	$s2, $v0		# $s2 = $v0 (Set contents of $v0 to $s2)
+
+otherwise:
+	move 	$v0, $s1	        # $v0 = $s1 (Set the contents of $s1 to $v0)
+	move 	$v1, $s2		# $v1 = $s2 (Set the contents of $s2 to $v1)
+		
+	# Restore frame
+	lw	$fp, 36($sp)
+	lw	$ra, 32($sp)
+	lw	$a0, 28($sp)
+	lw	$a1, 24($sp)
+	lw	$s1, 20($sp)
+	lw	$s2, 16($sp)
+	lw	$s4, 12($sp)
+	lw	$s5,  8($sp)
+	addi	$sp, $sp, 36
+	jr	$ra
+
+	
+#####################################################################
+# Implement au_normal
+# Argument:
+# 	$a0: First number
+#	$a1: Second number
+#	$a2: operation code ('+':add, '-':sub, '*':mul, '/':div)
+# Return:
+#	$v0: ($a0+$a1) | ($a0-$a1) | ($a0*$a1):LO | ($a0 / $a1)
+# 	$v1: ($a0 * $a1):HI | ($a0 % $a1)
+# Notes:
+#####################################################################
+au_normal:
+# TBD: Complete it
+	beq	$a2, '+', addition
+	beq	$a2, '-', subtraction
+	beq	$a2, '*', multiplication
+	beq	$a2, '/', division
+	
+addition:
+	add $v0, $a0, $a1
+	jr	$ra
+	
+subtraction:
+	sub $v0, $a0, $a1
+	jr	$ra
+	
+multiplication: 
+	mul  	$v1, $a0, $a1
+	mflo	$v0
+	mfhi	$v1
+	jr	$ra
+	
+division:
+	div	$v1, $a0, $a1
+	mflo	$v0
+	mfhi	$v1
+	jr	$ra
